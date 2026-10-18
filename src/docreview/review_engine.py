@@ -6,6 +6,7 @@ import re
 from collections import Counter
 from dataclasses import replace
 from datetime import UTC, datetime
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 
 from docreview import __version__
@@ -13,6 +14,7 @@ from docreview.docstrings import plan_function
 from docreview.documentation_decisions import Json, as_object, decide
 from docreview.documentation_inputs import Case, Document
 from docreview.facts import inspect_corpus
+from docreview.paths import matches
 from docreview.review_evaluation import evaluate
 from docreview.review_execution import Executor, Transport
 from docreview.review_handoff import (
@@ -149,6 +151,8 @@ def _review_case(
                 allow_filesystem=snapshot_filesystem,
             )
         )[0]
+    if captured_facts is None and case.document.document_type is not None:
+        _apply_case_declaration(config, case, row)
     row["case_id"] = case.name
     row["requests"] = list[Json]()
     row["criteria"] = dict[str, Json]()
@@ -242,6 +246,55 @@ def _check_observations(
             *json_array(row["not_assessed"]),
             "model revision changed or a required observation failed",
         ]
+
+
+# A snapshot case that names its type is its own declaration. These rules ask
+# a repository file to declare itself, so they do not apply to the snapshot.
+CASE_DECLARED_RULES = frozenset(
+    {"frontmatter.type_missing", "frontmatter.status_missing"}
+)
+
+
+def _apply_case_declaration(
+    config: ProjectConfig, case: Case, row: dict[str, Json]
+) -> None:
+    """Use the case type as the declaration, including its placement rule."""
+    failures = [as_object(item, "failure") for item in json_array(row["hard_failures"])]
+    kept: list[Json] = [
+        item for item in failures if item["rule"] not in CASE_DECLARED_RULES
+    ]
+    if len(kept) < len(failures):
+        row["not_assessed"] = [
+            *json_array(row["not_assessed"]),
+            "declaration: type supplied by the case input; frontmatter declaration rules not applied",
+        ]
+    declared = case.document.document_type
+    kind = "runbook" if declared == "human_instructions" else declared
+    path = case.document.path
+    rule = config.types.get(kind or "")
+    exempt = (
+        path in config.fixed_types
+        or PurePosixPath(path).name in config.fixed_types
+        or matches(path, config.generated)
+    )
+    already = any(
+        as_object(item, "failure")["rule"] == "placement.type_path" for item in kept
+    )
+    if (
+        rule is not None
+        and not exempt
+        and not already
+        and not matches(path, rule.paths)
+    ):
+        kept.append(
+            {
+                "rule": "placement.type_path",
+                "line_start": 1,
+                "line_end": 1,
+                "message": f"'{kind}' is not allowed at this path; use its configured home or request an owner placement decision",
+            }
+        )
+    row["hard_failures"] = kept
 
 
 def _resolve_kind(

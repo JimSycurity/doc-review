@@ -506,3 +506,55 @@ def test_changed_model_revision_cannot_pass(tmp_path: Path) -> None:
     )
     assert row["route"] == "review"
     assert "revision changed" in str(row["not_assessed"])
+
+
+def _snapshot(path: str, kind: str | None) -> Case:
+    return Case(
+        "snapshot",
+        "development",
+        Document(
+            path,
+            "# Recover\n\nRestore the worker.\n\n## Steps\n\n1. Stop it.\n2. Restore it.\n",
+            context="Glossary.",
+            document_type=kind,
+            context_complete=True,
+        ),
+    )
+
+
+def _rules(report: dict[str, Json]) -> list[object]:
+    rows = report["documents"]
+    assert isinstance(rows, list)
+    failures = as_object(rows[0], "row")["hard_failures"]
+    assert isinstance(failures, list)
+    return [as_object(item, "failure")["rule"] for item in failures]
+
+
+def test_snapshot_case_type_is_its_declaration(tmp_path: Path) -> None:
+    report = review_cases(
+        default_config(tmp_path), [_snapshot("docs/usage/recover.md", "runbook")]
+    )
+    rows = report["documents"]
+    assert isinstance(rows, list)
+    row = as_object(rows[0], "row")
+    assert _rules(report) == []
+    assert row["requests"], "a declared snapshot reaches the model stage"
+    notes = row["not_assessed"]
+    assert isinstance(notes, list)
+    assert any("supplied by the case input" in str(note) for note in notes)
+
+
+def test_snapshot_without_declared_type_keeps_the_declaration_rule(
+    tmp_path: Path,
+) -> None:
+    report = review_cases(
+        default_config(tmp_path), [_snapshot("docs/usage/recover.md", None)]
+    )
+    assert "frontmatter.type_missing" in _rules(report)
+
+
+def test_snapshot_placement_failure_still_short_circuits(tmp_path: Path) -> None:
+    report = review_cases(
+        default_config(tmp_path), [_snapshot("docs/plans/recover.md", "runbook")]
+    )
+    assert _rules(report) == ["placement.type_path"]
