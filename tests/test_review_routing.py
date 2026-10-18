@@ -110,9 +110,9 @@ def test_noul_action_bands(probability: float, status: str) -> None:
 
 def test_score_confidence_and_sample_spread_block_automatic_actions() -> None:
     question = Question(
-        "english",
-        "plain_english",
-        "Judge clarity.",
+        "reading",
+        "selective_reading",
+        "Judge organization.",
         PLACE,
         "score",
         PLAIN_ENGLISH.levels,
@@ -173,3 +173,26 @@ def test_duplication_middle_and_low_ownership_confidence_stay_review() -> None:
         )["status"]
         == "uncertain"
     )
+
+
+def _top_level_status(family: str, *mass: float) -> object:
+    question = Question(
+        family, family, "Judge fit.", PLACE, "score", PLAIN_ENGLISH.levels
+    )
+    return assess_question(question, (score(*mass),), Bands())["status"]
+
+
+def test_top_level_families_fail_when_the_top_level_is_confidently_missed() -> None:
+    for family in ("plain_english", "audience_detail"):
+        assert _top_level_status(family, 0.2, 0.75, 0.05) == "fail"
+        assert _top_level_status(family, 0.01, 0.79, 0.2) == "uncertain"
+        assert _top_level_status(family, 0.0, 0.05, 0.95) == "pass"
+        question = Question(
+            family, family, "Judge fit.", PLACE, "score", PLAIN_ENGLISH.levels
+        )
+        unstable = assess_question(
+            question,
+            (score(0.2, 0.75, 0.05), score(0.0, 0.7, 0.3), score(0.2, 0.75, 0.05)),
+            Bands(),
+        )
+        assert unstable["status"] == "uncertain", "sample spread still blocks action"

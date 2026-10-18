@@ -218,3 +218,22 @@ def test_concept_term_usage_becomes_a_located_section_question(tmp_path: Path) -
     assert "'operator'" in questions[0].instructions
     assert questions[0].positive is False
     assert questions[0].location.heading == "Run"
+
+
+def test_declared_purpose_outranks_the_pages_own_opening(tmp_path: Path) -> None:
+    (tmp_path / "docs-review.toml").write_text(
+        "[types.runbook]\n"
+        'paths = ["docs/usage/**"]\n'
+        'purpose = "Plain-English instructions for range users"\n'
+        'audience = "people operating the range"\n'
+    )
+    text = (
+        "---\ntype: runbook\n---\n# Tasks\n\nRead this page to choose an agent task.\n"
+    )
+    plan = plan_document(
+        load_config(tmp_path), Document("docs/usage/tasks.md", text), "runbook", {}
+    )
+    prompts = [q.instructions for r in plan.requests for q in r.questions]
+    assert any("Plain-English instructions for range users" in p for p in prompts)
+    assert not any("choose an agent task" in p for p in prompts)
+    assert any("people operating the range" in p for p in prompts)

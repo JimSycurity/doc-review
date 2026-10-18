@@ -16,7 +16,6 @@ if TYPE_CHECKING:
 
 SAMPLE_MARGIN = 0.02
 SPREAD_LIMIT = 0.10
-MIDDLE_FAILURE = 0.80
 
 
 @dataclass(frozen=True)
@@ -99,7 +98,6 @@ def needs_repeat(question: Question, answer: Answer, bands: Bands) -> bool:
     boundaries = (
         bands.reject_below,
         bands.accept_above,
-        MIDDLE_FAILURE,
         bands.duplication_same,
     )
     return abs(answer.confidence - bands.min_confidence) <= SAMPLE_MARGIN + 1e-9 or any(
@@ -116,14 +114,26 @@ def _stable(signals: Signals, bands: Bands) -> bool:
     )
 
 
+# For these families anything short of the top level is an author-fixable
+# failure, so the decision is binary: was the top level confidently met or not.
+# Calibrated 2026-10-18 on 59 owner-labeled GlobalTech documents: the model
+# answered "partly fits" with about 0.7 of the mass on the middle level, which
+# the bottom-level rule could never route.
+TOP_LEVEL_FAMILIES = frozenset({"plain_english", "audience_detail"})
+
+
+def _top_level(question: Question, signals: Signals) -> float:
+    return signals.probabilities[str(len(question.levels) - 1)]
+
+
 def _status(question: Question, signals: Signals, bands: Bands) -> tuple[Status, float]:
     values = signals.probabilities
     if question.kind == "noul":
         good = values["true"] if question.positive else values["false"]
         return bands.status(good, 1 - good, signals.confidence), good
-    good = values[str(len(question.levels) - 1)]
-    if question.family == "plain_english" and values["1"] >= MIDDLE_FAILURE:
-        return "fail", good
+    good = _top_level(question, signals)
+    if question.family in TOP_LEVEL_FAMILIES:
+        return bands.status(good, 1 - good, abs(2 * good - 1)), good
     return bands.status(good, values["0"], signals.confidence), good
 
 
@@ -136,7 +146,12 @@ def assess_question(
         status, good = _choice(answers, bands)
     else:
         status, good = _status(question, signals, bands)
-    if question.kind != "choice" and not _stable(signals, bands):
+    binary = question.kind == "score" and question.family in TOP_LEVEL_FAMILIES
+    # A binary decision's certainty is its own margin, already checked by the
+    # bands; the level-concentration statistic does not apply to it.
+    if question.kind != "choice" and (
+        signals.spread > SPREAD_LIMIT + 1e-9 if binary else not _stable(signals, bands)
+    ):
         status = "uncertain"
     return {
         "question": question.instructions,

@@ -26,11 +26,16 @@ def role_name(kind: str) -> str:
 
 
 def purpose_for(config: ProjectConfig, document: Document, kind: str) -> str:
+    """The project's declared purpose outranks the page's description of itself.
+
+    A page written for the wrong reader usually says so in its opening, so the
+    opening is evidence to judge, not the standard to judge it against.
+    """
     rule = config.types[kind]
     return (
         document.purpose
-        or _stated_purpose(config, document)
         or rule.purpose
+        or _stated_purpose(config, document)
         or TYPES.get(role_name(kind), "Serve the declared reader task")
     )
 

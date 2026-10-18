@@ -391,8 +391,11 @@ def test_failure_cannot_be_canceled_by_successful_other_criteria(
     )
     assert row["route"] == "revise"
     handoff = as_object(row["handoff"], "handoff")
-    assert handoff["failed"] == ["type_fit"]
-    assert handoff["uncertain"] == ["audience_detail"]
+    failed = handoff["failed"]
+    assert isinstance(failed, list)
+    # A confident "partly fits" answer misses the top level, so it fails too.
+    assert set(failed) == {"type_fit", "audience_detail"}
+    assert handoff["uncertain"] == []
 
 
 def test_evaluation_labels_and_retry_count_never_enter_model_state(
