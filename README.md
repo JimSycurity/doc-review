@@ -100,7 +100,7 @@ original answer distributions. Oversized inputs and missing context stay review
 gaps. Dry-run previews never count as model answers. Live calls require both
 `--live` and `--key-file`; no environment credential fallback is used.
 
-The [review guide](../../skills/code-review-and-qa/code-review/references/documentation-decision-trial.md)
+The [review guide](../../skills/code-review-and-qa/documentation-review/references/engine.md)
 covers snapshot and docstring schemas, context completeness, repair history,
 evaluation labels and report interpretation. Model criteria remain advisory
 unless a project explicitly promotes them. Tests use controlled responses;
