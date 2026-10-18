@@ -41,8 +41,11 @@ uv run docreview facts --root /path/to/repo --moved docs/design/proposal.md \
 ```
 
 Reports include declaration, placement, section ranges, incoming and outgoing
-links, redirects, banned terms, execution signals and readability facts.
-Execution and readability signals alone never fail a document. A page with no
+links, redirects, retired words, concept-scoped term usage, execution signals
+and readability facts. Only retired words (the inline list and `global` term
+sources) fail a document. A `concept` source such as a glossary avoid list
+records each match with its concept for the model's term usage question.
+Execution, readability and term usage signals alone never fail a document. A page with no
 hard failure still routes to review: these facts do not establish content quality.
 The caller supplies new/moved paths; the engine does not infer a Git comparison.
 

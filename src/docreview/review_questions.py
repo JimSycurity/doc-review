@@ -112,6 +112,7 @@ def section_questions(
     location: Location,
     *,
     has_execution_signal: bool,
+    term_usages: tuple[tuple[str, str], ...] = (),
 ) -> tuple[Question, ...]:
     field = f"state.sections.{section_id}.text"
     scope = (
@@ -132,7 +133,7 @@ def section_questions(
                 f"plain_english:{section_id}",
                 "plain_english",
                 GUARD
-                + f"Judge {field} for audience {audience!r}. Terms listed in state.defined_terms are already defined. How clear is this section for that reader?",
+                + f"Judge {field} for audience {audience!r}. Terms listed in state.defined_terms are already defined. state.sections.{section_id}.readability holds deterministic sentence-length and long-word signals, not a verdict. How clear is this section for that reader?",
                 location,
                 "score",
                 PLAIN_ENGLISH.levels,
@@ -150,6 +151,17 @@ def section_questions(
                 "stable_guidance",
                 scope + rule + " Does this section respect that document rule?",
                 location,
+            )
+        )
+    for index, (term, concept) in enumerate(term_usages):
+        questions.append(
+            Question(
+                f"term_usage:{section_id}:{index}",
+                "term_usage",
+                GUARD
+                + f"The project glossary says the concept {concept!r} should not be called {term!r}; the word may still be correct for other meanings. In {field}, is {term!r} used to mean {concept!r}?",
+                location,
+                positive=False,
             )
         )
     return tuple(questions)

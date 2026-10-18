@@ -17,9 +17,9 @@ from docreview.markdown import sections
 def test_orphan_and_banned_term_have_locations(tmp_path: Path) -> None:
     (tmp_path / "docs/usage").mkdir(parents=True)
     (tmp_path / "docs-review.toml").write_text(
-        '[review]\nauthority = "owned"\n[terms]\nsources = [{file = "CONTEXT.md", pattern = "^_Avoid_: (.*)$", split = ", "}]\n'
+        '[review]\nauthority = "owned"\n[terms]\nsources = [{file = "RETIRED.md", pattern = "^- (.*)$", split = ", ", scope = "global"}]\n'
     )
-    (tmp_path / "CONTEXT.md").write_text("# Vocabulary\n\n_Avoid_: backlog manager\n")
+    (tmp_path / "RETIRED.md").write_text("# Retired words\n\n- backlog manager\n")
     (tmp_path / "docs/usage/recover.md").write_text(
         "---\ntype: runbook\n---\n# Recover\n\nUse the backlog manager.\n"
         + "Recovery steps. " * 100
@@ -237,3 +237,68 @@ def test_bad_declaration_message_names_the_rejected_key(tmp_path: Path) -> None:
     with redirect_stderr(io.StringIO()) as error:
         assert main(["facts", "--root", str(tmp_path)]) == 2
     assert "review: unknown keys: athority" in error.getvalue()
+
+
+GLOSSARY = (
+    "# Language\n\n"
+    "**Narrative Person**:\nA person in the story.\n"
+    "_Avoid_: Range user, operator,\nservice principal\n\n"
+    "**Operator**:\nA person who performs range work.\n"
+)
+CONCEPT_SOURCE = (
+    '[review]\nauthority = "owned"\n[terms]\nsources = [{file = "CONTEXT.md", '
+    'pattern = "^_Avoid_: (.*)$", split = ", ", concept_pattern = "^\\\\*\\\\*([^*]+)\\\\*\\\\*:"}]\n'
+)
+
+
+def test_concept_scoped_terms_are_advisory_usage_facts(tmp_path: Path) -> None:
+    write(tmp_path, "CONTEXT.md", GLOSSARY)
+    write(tmp_path, "docs-review.toml", CONCEPT_SOURCE)
+    write(
+        tmp_path,
+        "docs/usage/run.md",
+        "---\ntype: runbook\n---\n# Run\n\nThe operator starts the range.\n",
+    )
+    row = document(inspect_repository(load_config(tmp_path), ["docs/usage/run.md"]))
+    assert not [item for item in failures(row) if item["rule"] == "terms.banned"]
+    facts = as_object(row["facts"], "facts")
+    assert facts["banned_terms"] == []
+    assert facts["term_usage"] == [
+        {
+            "term": "operator",
+            "concept": "Narrative Person",
+            "line_start": 6,
+            "line_end": 6,
+        }
+    ]
+
+
+def test_wrapped_avoid_entries_are_joined_and_not_counted_in_the_glossary(
+    tmp_path: Path,
+) -> None:
+    write(tmp_path, "CONTEXT.md", GLOSSARY)
+    write(tmp_path, "docs-review.toml", CONCEPT_SOURCE)
+    write(
+        tmp_path,
+        "docs/usage/run.md",
+        "---\ntype: runbook\n---\n# Run\n\nAsk the service principal.\n",
+    )
+    config = load_config(tmp_path)
+    run = document(inspect_repository(config, ["docs/usage/run.md"]))
+    usage = as_object(run["facts"], "facts")["term_usage"]
+    assert isinstance(usage, list)
+    assert [as_object(item, "usage")["term"] for item in usage] == ["service principal"]
+    glossary = document(inspect_repository(config, ["CONTEXT.md"]))
+    assert as_object(glossary["facts"], "facts")["term_usage"] == []
+
+
+def test_global_scope_rejects_concept_pattern(tmp_path: Path) -> None:
+    write(
+        tmp_path,
+        "docs-review.toml",
+        '[terms]\nsources = [{file = "CONTEXT.md", pattern = "^- (.*)$", split = ", ", '
+        'scope = "global", concept_pattern = "^# (.*)$"}]\n',
+    )
+    write(tmp_path, "CONTEXT.md", "# Words\n")
+    with pytest.raises(ValueError, match="concept-scoped"):
+        load_config(tmp_path)

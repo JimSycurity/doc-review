@@ -69,11 +69,18 @@ class TypeRule:
 
 @dataclass(frozen=True)
 class TermSource:
-    """Select terms from one explicitly named repository file."""
+    """Select terms from one explicitly named repository file.
+
+    A ``concept`` source lists synonyms to avoid for one glossary entry, so a
+    match is an advisory usage fact for the model to judge in context. Only a
+    ``global`` source, or the inline list, names words retired everywhere.
+    """
 
     file: str
     pattern: str
     split: str
+    scope: str = "concept"
+    concept_pattern: str = ""
 
 
 @dataclass(frozen=True)
@@ -227,13 +234,29 @@ def _terms(row: dict[str, Json]) -> tuple[TermSource, ...]:
         raise ValueError("terms.sources must be a list")
     sources = []
     for value in values:
-        entry = table(value, {"file", "pattern", "split"}, "terms.sources")
+        entry = table(
+            value,
+            {"file", "pattern", "split", "scope", "concept_pattern"},
+            "terms.sources",
+        )
         pattern = text(entry, "pattern")
         if _capture_count(pattern) != 1 or not text(entry, "split", ", "):
             raise ValueError("term pattern needs one capture and a nonempty split")
+        scope = text(entry, "scope", "concept")
+        if scope not in {"concept", "global"}:
+            raise ValueError("terms.sources scope must be concept or global")
+        concept_pattern = text(entry, "concept_pattern")
+        if concept_pattern and _capture_count(concept_pattern) != 1:
+            raise ValueError("concept_pattern needs exactly one capture")
+        if concept_pattern and scope == "global":
+            raise ValueError("concept_pattern applies only to concept-scoped sources")
         sources.append(
             TermSource(
-                relative_path(text(entry, "file")), pattern, text(entry, "split", ", ")
+                relative_path(text(entry, "file")),
+                pattern,
+                text(entry, "split", ", "),
+                scope,
+                concept_pattern,
             )
         )
     return tuple(sources)

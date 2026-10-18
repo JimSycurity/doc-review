@@ -99,10 +99,11 @@ def test_moved_type_path_conflict_requires_ownership_review(tmp_path: Path) -> N
     )
 
 
-def test_inline_status_has_one_authoritative_home(tmp_path: Path) -> None:
-    text = (
-        "---\ntype: design\nstatus: proposed\n---\n# Design\n\n**Status:** installed\n"
-    )
+@pytest.mark.parametrize(
+    "label", ["**Status:** installed", "**Status**: installed", "Status: installed"]
+)
+def test_inline_status_has_one_authoritative_home(tmp_path: Path, label: str) -> None:
+    text = f"---\ntype: design\nstatus: proposed\n---\n# Design\n\n{label}\n"
     result = validate_document(load_config(tmp_path), "docs/design/proposal.md", text)
     assert [(item.rule, item.line_start) for item in result.failures] == [
         ("frontmatter.inline_status", 7)

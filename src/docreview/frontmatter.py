@@ -44,6 +44,10 @@ REJECTED_KEYS = {
 }
 
 
+# Status labels seen in practice: **Status:**, **Status**: and a plain Status: line.
+INLINE_STATUS = re.compile(r"\s*(?:\*\*Status:\*\*|\*\*Status\*\*:|Status:)")
+
+
 @dataclass(frozen=True)
 class Finding:
     """One located rule violation; messages contain no source or credential dump."""
@@ -283,7 +287,7 @@ def _status_failures(
         )
     if status is not None:
         for number, body_line in prose_lines(text, body_start):
-            if re.match(r"\s*\*\*Status:\*\*", body_line):
+            if INLINE_STATUS.match(body_line):
                 failures.append(
                     Finding(
                         "frontmatter.inline_status",

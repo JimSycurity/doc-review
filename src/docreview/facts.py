@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -15,7 +16,7 @@ from docreview.markdown import Section, prose_lines, sections
 from docreview.paths import maintained_paths, matches, repository_path
 
 if TYPE_CHECKING:
-    from docreview.configuration import ProjectConfig
+    from docreview.configuration import ProjectConfig, TermSource
     from docreview.documentation_decisions import Json
     from docreview.duplication import DuplicationIndex
 
@@ -28,60 +29,138 @@ EXECUTION_PATTERNS = (
 )
 
 
-def _term_patterns(config: ProjectConfig) -> list[tuple[str, re.Pattern[str]]]:
-    terms = list(config.inline_terms)
+@dataclass(frozen=True)
+class TermRule:
+    """One configured term; only retired words are hard failures."""
+
+    term: str
+    pattern: re.Pattern[str]
+    concept: str | None
+    retired: bool
+
+
+@dataclass(frozen=True)
+class TermCatalog:
+    """Terms plus the defining lines that must not count as occurrences."""
+
+    rules: tuple[TermRule, ...]
+    defining_lines: dict[str, frozenset[int]]
+
+
+BLOCK_START = re.compile(r"\s*(?:#|[-*+] |\d+\. |>|\||_[A-Za-z]|\*\*)")
+
+
+def _entry_text(
+    lines: list[str], index: int, first: str, stop: re.Pattern[str] | None
+) -> tuple[str, list[int]]:
+    """Join a wrapped list entry until a blank line or the next block."""
+    parts = [first]
+    used = [index + 1]
+    for offset in range(index + 1, len(lines)):
+        line = lines[offset]
+        if not line.strip() or BLOCK_START.match(line) or (stop and stop.search(line)):
+            break
+        parts.append(line.strip())
+        used.append(offset + 1)
+    return " ".join(parts), used
+
+
+def _source_terms(
+    content: str, source: TermSource
+) -> tuple[list[tuple[str, str | None]], set[int]]:
+    pattern = re.compile(source.pattern)
+    concept_pattern = (
+        re.compile(source.concept_pattern) if source.concept_pattern else None
+    )
+    lines = content.splitlines()
+    concept: str | None = None
+    found: list[tuple[str, str | None]] = []
+    defining: set[int] = set()
+    for index, line in enumerate(lines):
+        if concept_pattern and (heading := concept_pattern.search(line)):
+            concept = heading[1].strip()
+            defining.add(index + 1)
+        if match := pattern.search(line):
+            text, used = _entry_text(lines, index, match[1], pattern)
+            defining.update(used)
+            for term in text.split(source.split):
+                cleaned = term.strip().rstrip(".;")
+                if cleaned:
+                    found.append(
+                        (cleaned, concept if source.scope == "concept" else None)
+                    )
+    return found, defining
+
+
+def _compile(term: str) -> re.Pattern[str]:
+    return re.compile(r"(?<!\w)" + re.escape(term) + r"(?!\w)", re.IGNORECASE)
+
+
+def _term_catalog(config: ProjectConfig) -> TermCatalog:
+    rules: dict[tuple[str, str | None, bool], TermRule] = {}
+    for term in config.inline_terms:
+        if term.strip():
+            rules[(term.strip(), None, True)] = TermRule(
+                term.strip(), _compile(term.strip()), None, True
+            )
+    defining: dict[str, set[int]] = {}
     for source in config.term_sources:
-        pattern = re.compile(source.pattern)
         content = repository_path(config.root, source.file).read_text(encoding="utf-8")
-        for line in content.splitlines():
-            if match := pattern.search(line):
-                terms.extend(match[1].split(source.split))
-    return [
-        (
-            term.strip(),
-            re.compile(r"(?<!\w)" + re.escape(term.strip()) + r"(?!\w)", re.IGNORECASE),
-        )
-        for term in dict.fromkeys(terms)
-        if term.strip()
-    ]
+        found, used = _source_terms(content, source)
+        defining.setdefault(source.file, set()).update(used)
+        retired = source.scope == "global"
+        for term, concept in found:
+            rules.setdefault(
+                (term, concept, retired),
+                TermRule(term, _compile(term), concept, retired),
+            )
+    return TermCatalog(
+        tuple(rules.values()),
+        {path: frozenset(lines) for path, lines in defining.items()},
+    )
 
 
-def _banned_terms(
-    config: ProjectConfig,
-    path: str,
-    text: str,
-    start: int,
-    terms: list[tuple[str, re.Pattern[str]]],
-) -> tuple[list[Json], list[Finding]]:
-    findings = []
-    facts: list[Json] = []
-    definitions = [
-        re.compile(source.pattern)
-        for source in config.term_sources
-        if source.file == path
-    ]
+def _term_occurrences(
+    path: str, text: str, start: int, catalog: TermCatalog
+) -> tuple[list[Json], list[Json], list[Finding]]:
+    """Quoted text, block quotes and defining entries are not occurrences."""
+    banned: list[Json] = []
+    usage: list[Json] = []
+    findings: list[Finding] = []
+    skip = catalog.defining_lines.get(path, frozenset())
     for number, line in prose_lines(text, start):
-        if line.lstrip().startswith(">") or any(
-            pattern.search(line) for pattern in definitions
-        ):
+        if number in skip or line.lstrip().startswith(">"):
             continue
         unquoted = re.sub(
             r""""[^"]*"|\u201c[^\u201d]*\u201d|'[^']*'|\u2018[^\u2019]*\u2019""",
             "",
             line,
         )
-        for term, pattern in terms:
-            if pattern.search(unquoted):
-                facts.append({"term": term, "line_start": number, "line_end": number})
+        for rule in catalog.rules:
+            if not rule.pattern.search(unquoted):
+                continue
+            if rule.retired:
+                banned.append(
+                    {"term": rule.term, "line_start": number, "line_end": number}
+                )
                 findings.append(
                     Finding(
                         "terms.banned",
                         number,
                         number,
-                        f"use the canonical term instead of '{term}'",
+                        f"'{rule.term}' is retired in this project; use the canonical term",
                     )
                 )
-    return facts, findings
+            else:
+                usage.append(
+                    {
+                        "term": rule.term,
+                        "concept": rule.concept,
+                        "line_start": number,
+                        "line_end": number,
+                    }
+                )
+    return banned, usage, findings
 
 
 def _section_signals(
@@ -160,13 +239,13 @@ def _document_report(
     text: str,
     declaration: Declaration,
     graph: LinkGraph,
-    terms: list[tuple[str, re.Pattern[str]]],
+    terms: TermCatalog,
     is_new: bool,
     duplicate_candidates: list[Json],
 ) -> dict[str, Json]:
     outline = sections(text, declaration.body_start)
-    banned, term_failures = _banned_terms(
-        config, path, text, declaration.body_start, terms
+    banned, term_usage, term_failures = _term_occurrences(
+        path, text, declaration.body_start, terms
     )
     signals, readability = _section_signals(text, outline)
     failures = [
@@ -198,6 +277,7 @@ def _document_report(
             for item in (*failures, *declaration.review_items)
         ),
         "banned_terms": banned,
+        "term_usage": term_usage,
         "execution_log_signals": signals,
         "readability": readability,
         "duplicate_candidates": duplicate_candidates,
@@ -295,7 +375,7 @@ def inspect_corpus(
     duplicate_candidates = _duplicate_candidates(
         index, set(selected), config.limits.duplicate_overlap
     )
-    terms = _term_patterns(config)
+    terms = _term_catalog(config)
     documents: list[Json] = [
         _document_report(
             config,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -28,6 +29,17 @@ from docreview.review_types import Gap, Location
 if TYPE_CHECKING:
     from docreview.configuration import ProjectConfig
     from docreview.docstrings import FunctionDoc
+
+
+def defined_terms(context: str) -> tuple[str, ...]:
+    """Read glossary entries written as headings or as bold definition labels."""
+    found: list[str] = []
+    for line in context.splitlines():
+        if line.startswith("## "):
+            found.append(line.removeprefix("## ").strip())
+        elif match := re.match(r"\*\*([^*]+)\*\*:", line):
+            found.append(match[1].strip())
+    return tuple(dict.fromkeys(term for term in found if term))
 
 
 def review_cases(
@@ -163,11 +175,7 @@ def _review_case(
         return route_document(row, case, criteria, resolution_gaps, previous)
     gaps = [*pending, *resolution_gaps, *_placement(config, case, row, executor)]
     document = replace(case.document, document_type=role_name(kind))
-    terms = tuple(
-        line.lstrip("# ").strip()
-        for line in corpus.get("CONTEXT.md", "").splitlines()
-        if line.startswith("## ")
-    )
+    terms = defined_terms(corpus.get("CONTEXT.md", ""))
     plan = plan_document(
         config, document, kind, facts, corpus=corpus, defined_terms=terms
     )
