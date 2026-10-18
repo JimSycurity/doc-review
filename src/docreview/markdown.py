@@ -167,3 +167,34 @@ def redirect(text: str, body_start: int = 1) -> Link | None:
     ):
         return found[0]
     return None
+
+
+def document_opening(text: str, start: int) -> tuple[str, str]:
+    """Return the title and first purpose paragraph shared by catalogs and review."""
+    outline = sections(text, start)
+    heading = next((section for section in outline if section.level), None)
+    title = heading.heading if heading else "Untitled"
+    after = heading.line_start + 1 if heading else start
+    lines = text.splitlines()
+    if (
+        heading
+        and after <= len(lines)
+        and re.fullmatch(r" {0,3}(=+|-+)\s*", lines[after - 1])
+    ):
+        after += 1
+    return title, _paragraph(text, start, after)
+
+
+def _paragraph(text: str, start: int, after: int) -> str:
+    paragraph = []
+    for number, line in prose_lines(text, start, mask_inline=False):
+        if number < after:
+            continue
+        if not line.strip():
+            if paragraph:
+                break
+            continue
+        if line.lstrip().startswith("#"):
+            break
+        paragraph.append(line.strip())
+    return " ".join(paragraph)

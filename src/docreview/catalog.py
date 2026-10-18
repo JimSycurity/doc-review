@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING
 from urllib.parse import quote
 
 from docreview.frontmatter import Finding, validate_document
-from docreview.markdown import prose_lines, sections
+from docreview.markdown import document_opening
 from docreview.paths import maintained_paths, matches, repository_path
 
 if TYPE_CHECKING:
@@ -97,41 +96,11 @@ def _label(value: str) -> str:
     return _cell(value).replace("[", "\\[").replace("]", "\\]")
 
 
-def _opening(text: str, start: int) -> tuple[str, str]:
-    outline = sections(text, start)
-    heading = next((section for section in outline if section.level), None)
-    title = heading.heading if heading else "Untitled"
-    after = heading.line_start + 1 if heading else start
-    lines = text.splitlines()
-    if (
-        heading
-        and after <= len(lines)
-        and re.fullmatch(r" {0,3}(=+|-+)\s*", lines[after - 1])
-    ):
-        after += 1
-    return title, _paragraph(text, start, after)
-
-
-def _paragraph(text: str, start: int, after: int) -> str:
-    paragraph = []
-    for number, line in prose_lines(text, start, mask_inline=False):
-        if number < after:
-            continue
-        if not line.strip():
-            if paragraph:
-                break
-            continue
-        if line.lstrip().startswith("#"):
-            break
-        paragraph.append(line.strip())
-    return " ".join(paragraph)
-
-
 def _entry(
     config: ProjectConfig, path: str, text: str
 ) -> tuple[str, tuple[Finding, ...]]:
     declaration = validate_document(config, path, text)
-    title, purpose = _opening(text, declaration.body_start)
+    title, purpose = document_opening(text, declaration.body_start)
     link = quote(PurePosixPath(path).name, safe="._-")
     row = f"| [{_label(title)}]({link}) | {_cell(declaration.document_type or 'unknown')} | {_cell(declaration.status or '-')} | {_cell(purpose)} |"
     return row, declaration.failures

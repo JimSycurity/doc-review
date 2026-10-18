@@ -9,9 +9,9 @@ from pathlib import Path
 
 from docreview.catalog import apply_catalogs, plan_catalogs
 from docreview.configuration import load_config
-from docreview.documentation_trial import main as trial_main
 from docreview.facts import inspect_repository, report_exit_code
 from docreview.paths import repository_path
+from docreview.review_cli import add_arguments, run_review
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -20,11 +20,10 @@ def _parser() -> argparse.ArgumentParser:
         epilog="Example: docreview facts --root /path/to/repo docs/usage/recover.md",
     )
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser(
-        "review",
-        help="Run the moved trial; preview only unless --live is supplied",
-        add_help=False,
+    review = commands.add_parser(
+        "review", help="Review facts and located criteria; dry-run by default"
     )
+    add_arguments(review)
     facts = commands.add_parser(
         "facts", help="Check maintained Markdown without a model or credentials"
     )
@@ -117,11 +116,11 @@ def main(argv: list[str] | None = None) -> int:
     """Return 1 for owned enforcing failures, 2 for incomplete runs, otherwise 0."""
     parser = _parser()
     args, remaining = parser.parse_known_args(argv)
-    if args.command == "review":
-        return trial_main(remaining)
     if remaining:
         parser.error("unrecognized arguments: " + " ".join(remaining))
     try:
+        if args.command == "review":
+            return run_review(args)
         if args.command == "facts":
             return _facts(args)
         if args.command == "catalog":
@@ -130,7 +129,7 @@ def main(argv: list[str] | None = None) -> int:
             f"{args.command} is not implemented in this package slice", file=sys.stderr
         )
         return 2
-    except ValueError as exc:
+    except (ValueError, TypeError) as exc:
         print(f"Documentation checks could not complete: {exc}", file=sys.stderr)
         return 2
     except OSError as exc:

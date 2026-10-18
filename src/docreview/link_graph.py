@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import posixpath
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 from urllib.parse import unquote, urlsplit
 
@@ -23,6 +23,7 @@ class LinkGraph:
     failures: dict[str, list[Finding]]
     totals: dict[str, int]
     redirects: dict[str, str]
+    unassessed: dict[str, list[Finding]] = field(default_factory=dict)
 
 
 def local_target(source: str, target: str) -> tuple[str, str] | None:
@@ -46,17 +47,33 @@ def local_target(source: str, target: str) -> tuple[str, str] | None:
 
 
 def build_graph(
-    root: Path, corpus: dict[str, str], starts: dict[str, int]
+    root: Path,
+    corpus: dict[str, str],
+    starts: dict[str, int],
+    *,
+    allow_filesystem: bool = True,
 ) -> LinkGraph:
     """Count direct incoming pages, ignoring self-links and duplicates from a page."""
     graph = LinkGraph(
-        {path: set() for path in corpus}, {path: [] for path in corpus}, {}, {}
+        {path: set() for path in corpus},
+        {path: [] for path in corpus},
+        {},
+        {},
+        {path: [] for path in corpus},
     )
     for path, text in corpus.items():
         found = links(text, starts[path])
         graph.totals[path] = len(found)
         for link in found:
-            _add_link(graph, root, corpus, path, link.target, link.line)
+            _add_link(
+                graph,
+                root,
+                corpus,
+                path,
+                link.target,
+                link.line,
+                allow_filesystem=allow_filesystem,
+            )
         target = _redirect_target(path, text, starts[path], graph.failures[path])
         if target:
             graph.redirects[path] = target
@@ -82,6 +99,8 @@ def _add_link(
     source: str,
     raw: str,
     line: int,
+    *,
+    allow_filesystem: bool = True,
 ) -> None:
     try:
         target = local_target(source, raw)
@@ -89,16 +108,32 @@ def _add_link(
             return
         path, fragment = target
         file = repository_path(root, path)
-        if not file.exists():
+        if path not in corpus and not allow_filesystem:
+            graph.unassessed[source].append(
+                Finding(
+                    "links.not_assessed",
+                    line,
+                    line,
+                    "snapshot does not supply this relative link target",
+                )
+            )
+            return
+        if path not in corpus and not file.exists():
             raise ValueError("relative link target does not exist")
-        if fragment and file.suffix == ".md":
-            text = corpus[path] if path in corpus else file.read_text(encoding="utf-8")
-            if fragment not in anchors(text):
-                raise ValueError("Markdown heading anchor does not exist")
+        _validate_fragment(file, path, fragment, corpus)
         if source != path and path in graph.incoming:
             graph.incoming[path].add(source)
     except ValueError as exc:
         graph.failures[source].append(Finding("links.unresolved", line, line, str(exc)))
+
+
+def _validate_fragment(
+    file: Path, path: str, fragment: str, corpus: dict[str, str]
+) -> None:
+    if fragment and file.suffix == ".md":
+        text = corpus[path] if path in corpus else file.read_text(encoding="utf-8")
+        if fragment not in anchors(text):
+            raise ValueError("Markdown heading anchor does not exist")
 
 
 def redirect_failures(path: str, graph: LinkGraph, limit: int) -> list[Finding]:

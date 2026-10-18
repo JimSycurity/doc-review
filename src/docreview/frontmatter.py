@@ -236,7 +236,7 @@ def _type_failures(
     exempt: bool,
     line: int,
 ) -> list[Finding]:
-    if exempt:
+    if exempt or kind is None:
         return []
     if kind not in config.types:
         return [

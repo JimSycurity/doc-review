@@ -10,7 +10,7 @@ From this package directory:
 uv sync
 uv run docreview --help
 uv run docreview facts --root /path/to/repo docs/usage/recover.md
-uv run docreview review             # moved trial preview; no network or credential use
+uv run docreview review             # request preview; no network or credential use
 uv run pytest
 uv run ruff check .
 uv run ruff format --check .
@@ -82,14 +82,27 @@ or removed pages select a new cache. Corrupt or unavailable caches are rebuilt
 in memory and reported. Contributed mode never writes a cache. Keep `.tmp/`
 out of Git; no index or generated test corpus belongs in a commit.
 
-## Trial and planned commands
+## Model-assisted review
 
-The [review trial guide](../../skills/code-review-and-qa/code-review/references/documentation-decision-trial.md)
-explains the moved whole-document trial's bundle and advisory output. Its
-questions and report remain unchanged while the new deterministic layer is
-built. It is separate from `facts`; this slice does not yet join them.
+```bash
+uv run docreview review --root /path/to/repo docs/usage/recover.md
+uv run docreview review --cases /private/documents.json
+uv run docreview review --docstrings /private/changed-functions.json
+```
 
-The [review boundary design](../../docs/design/documentation-review-boundary.md)
-specifies the remaining section-based model rewrite and profile integration.
-`adopt --report-only` reserves the later adoption command and currently returns
-an explicit unavailable error.
+Review joins the same facts with self-contained questions for complete sections,
+within the serialized request byte limit. It returns located `pass`, `revise` or
+`review` handoffs, with separate action bands, repeated boundary samples and
+original answer distributions. Oversized inputs and missing context stay review
+gaps. Dry-run previews never count as model answers. Live calls require both
+`--live` and `--key-file`; no environment credential fallback is used.
+
+The [review guide](../../skills/code-review-and-qa/code-review/references/documentation-decision-trial.md)
+covers snapshot and docstring schemas, context completeness, repair history,
+evaluation labels and report interpretation. Model criteria remain advisory
+unless a project explicitly promotes them. Tests use controlled responses;
+model quality and the starting bands still need calibration.
+
+The [boundary design](../../docs/design/documentation-review-boundary.md)
+specifies later skill/profile integration. `adopt --report-only` reserves the
+later adoption command and currently returns an explicit unavailable error.

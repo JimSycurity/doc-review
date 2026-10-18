@@ -1,0 +1,343 @@
+"""Build whole-document or section-bundle requests without cutting source text."""
+
+from __future__ import annotations
+
+import hashlib
+import re
+from collections import Counter
+from typing import TYPE_CHECKING
+
+from docreview.configuration import integer
+from docreview.configuration import text as scalar_text
+from docreview.documentation_decisions import Json, as_object, encoded_request
+from docreview.frontmatter import validate_document
+from docreview.markdown import sections
+from docreview.review_questions import (
+    audience_for,
+    document_questions,
+    duplicate_questions,
+    purpose_for,
+    section_questions,
+)
+from docreview.review_types import Gap, Location, Plan, Question, Request
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from docreview.configuration import ProjectConfig
+    from docreview.documentation_inputs import Document
+
+NONCE = "00000000-0000-0000-0000-000000000000"
+
+
+def request_payload(
+    model: str,
+    state: dict[str, Json],
+    questions: tuple[Question, ...],
+    *,
+    reverse: bool = False,
+) -> dict[str, Json]:
+    return {
+        "model": model,
+        "state": {**state, "nonce": NONCE},
+        "questions": {
+            question.key: question.as_json(reverse=reverse) for question in questions
+        },
+    }
+
+
+def _section_states(document: Document, start: int) -> dict[str, dict[str, Json]]:
+    lines = document.text.splitlines(keepends=True)
+    counts: Counter[str] = Counter()
+    result = {}
+    for section in sections(document.text, start):
+        slug = re.sub(r"\W+", "-", section.heading.casefold()).strip("-") or "opening"
+        counts[slug] += 1
+        key = slug if counts[slug] == 1 else f"{slug}-{counts[slug]}"
+        result[key] = {
+            **Location(
+                document.path, section.heading, section.line_start, section.line_end
+            ).as_json(),
+            "words": section.words,
+            "text": "".join(lines[section.line_start - 1 : section.line_end]),
+        }
+    return result
+
+
+def _location(value: dict[str, Json]) -> Location:
+    return Location(
+        scalar_text(value, "path"),
+        scalar_text(value, "heading"),
+        integer(value, "line_start", 1),
+        integer(value, "line_end", 1),
+    )
+
+
+def _state(
+    config: ProjectConfig,
+    document: Document,
+    kind: str,
+    section_states: dict[str, dict[str, Json]],
+    facts: dict[str, Json],
+    defined_terms: tuple[str, ...],
+) -> dict[str, Json]:
+    return {
+        "path": document.path,
+        "document_type": kind,
+        "purpose": purpose_for(config, document, kind),
+        "audience": audience_for(config, document, kind),
+        "context": document.context,
+        "diff": document.diff,
+        "defined_terms": list(defined_terms),
+        "index_entries": facts.get("index_entries", []),
+        "outline": [
+            {key: value for key, value in section.items() if key != "text"}
+            for section in section_states.values()
+        ],
+        "opening": next(iter(section_states), ""),
+        "sections": {},
+        "facts": {
+            key: facts.get(key)
+            for key in ("placement_ok", "links_resolve", "readability")
+        },
+        "coverage": "section_bundle",
+    }
+
+
+def _pack(
+    config: ProjectConfig,
+    base: dict[str, Json],
+    units: list[tuple[dict[str, Json], tuple[Question, ...]]],
+    strategy: str,
+) -> Plan:
+    requests = []
+    gaps = []
+    state = dict(base)
+    questions: tuple[Question, ...] = ()
+    for addition, new_questions in units:
+        candidate_state = {
+            **state,
+            "sections": {
+                **as_object(state.get("sections", {}), "sections"),
+                **addition,
+            },
+        }
+        candidate_questions = (*questions, *new_questions)
+        payload = request_payload(config.model, candidate_state, candidate_questions)
+        if len(encoded_request(payload)) <= config.limits.request_bytes:
+            state, questions = candidate_state, candidate_questions
+            continue
+        if questions:
+            requests.append(
+                Request(
+                    request_payload(config.model, state, questions), questions, strategy
+                )
+            )
+        state = {
+            **base,
+            "sections": {**as_object(base.get("sections", {}), "sections"), **addition},
+        }
+        questions = new_questions
+        if (
+            len(encoded_request(request_payload(config.model, state, questions)))
+            > config.limits.request_bytes
+        ):
+            gaps.extend(
+                Gap(
+                    question.location,
+                    "request_too_large: opening, outline and complete target cannot fit the request budget",
+                )
+                for question in questions
+            )
+            state, questions = dict(base), ()
+    if questions:
+        requests.append(
+            Request(
+                request_payload(config.model, state, questions), questions, strategy
+            )
+        )
+    return Plan(tuple(requests), tuple(gaps))
+
+
+def plan_document(
+    config: ProjectConfig,
+    document: Document,
+    kind: str,
+    facts: dict[str, Json],
+    *,
+    corpus: Mapping[str, str] | None = None,
+    defined_terms: tuple[str, ...] = (),
+) -> Plan:
+    """Each section is complete, even when the whole document needs several calls."""
+    declaration = validate_document(config, document.path, document.text)
+    states = _section_states(document, declaration.body_start)
+    base = _state(config, document, kind, states, facts, defined_terms)
+    location = Location(
+        document.path, "Document", 1, max(1, len(document.text.splitlines()))
+    )
+    purpose, audience = (
+        purpose_for(config, document, kind),
+        audience_for(config, document, kind),
+    )
+    common = document_questions(
+        kind, purpose, audience, location, rubric=config.types[kind].rubric
+    )
+    signaled = _signal_lines(facts)
+    units: list[tuple[dict[str, Json], tuple[Question, ...]]] = [
+        ({}, (question,)) for question in common
+    ]
+    for key, value in states.items():
+        target = _location(value)
+        units.append(
+            (
+                {key: value},
+                section_questions(
+                    kind,
+                    purpose,
+                    audience,
+                    key,
+                    target,
+                    has_execution_signal=target.line_start in signaled,
+                ),
+            )
+        )
+    all_questions = tuple(question for _, questions in units for question in questions)
+    whole_sections: dict[str, Json] = dict(states)
+    whole: dict[str, Json] = {
+        **base,
+        "sections": whole_sections,
+        "coverage": "whole",
+    }
+    payload = request_payload(config.model, whole, all_questions)
+    if len(encoded_request(payload)) <= config.limits.request_bytes:
+        plan = Plan((Request(payload, all_questions, "whole"),))
+    else:
+        opening = next(iter(states))
+        plan = _pack(
+            config,
+            {**base, "sections": {opening: states[opening]}},
+            units,
+            "section_bundle",
+        )
+    duplicate_plan = _duplicates(config, document, base, facts, corpus or {})
+    return Plan(
+        (*plan.requests, *duplicate_plan.requests), (*plan.gaps, *duplicate_plan.gaps)
+    )
+
+
+def _signal_lines(facts: dict[str, Json]) -> set[int]:
+    values = facts.get("execution_log_signals", [])
+    if not isinstance(values, list):
+        raise TypeError("execution signals must be a list")
+    return {integer(as_object(value, "signal"), "line_start", 0) for value in values}
+
+
+def _duplicates(
+    config: ProjectConfig,
+    document: Document,
+    base: dict[str, Json],
+    facts: dict[str, Json],
+    corpus: Mapping[str, str],
+) -> Plan:
+    values = facts.get("duplicate_candidates", [])
+    if not isinstance(values, list):
+        raise TypeError("duplicate candidates must be a list")
+    requests: list[Request] = []
+    gaps: list[Gap] = []
+    for raw in values:
+        pair = as_object(raw, "candidate")
+        left, right = (
+            as_object(pair.get("left"), "left"),
+            as_object(pair.get("right"), "right"),
+        )
+        source, reference = (
+            (left, right) if left.get("path") == document.path else (right, left)
+        )
+        location = _location(source)
+        pair_id = _pair_identity(source, reference, corpus)
+        questions = duplicate_questions(pair_id, location)
+        if scalar_text(reference, "path") not in corpus:
+            gaps.append(Gap(location, "duplicate_reference_missing"))
+            continue
+        state: dict[str, Json] = {
+            **base,
+            "sections": {},
+            "pairs": {
+                pair_id: {
+                    "changed": _excerpt(source, corpus),
+                    "reference": _excerpt(reference, corpus),
+                }
+            },
+        }
+        payload = request_payload(config.model, state, questions)
+        if len(encoded_request(payload)) <= config.limits.request_bytes:
+            requests.append(Request(payload, questions, "reference_pair"))
+        else:
+            gaps.append(
+                Gap(location, "request_too_large: complete reference pair cannot fit")
+            )
+    return Plan(tuple(requests), tuple(gaps))
+
+
+def _pair_identity(
+    source: dict[str, Json], reference: dict[str, Json], corpus: Mapping[str, str]
+) -> str:
+    identities = []
+    for value in (source, reference):
+        place = _location(value)
+        occurrence = sum(
+            section.heading == place.heading and section.line_start <= place.line_start
+            for section in sections(corpus.get(place.path, ""))
+        )
+        identities.append(f"{place.path}\0{place.heading}\0{occurrence}")
+    return hashlib.sha256("\0".join(identities).encode()).hexdigest()[:16]
+
+
+def _excerpt(location: dict[str, Json], corpus: Mapping[str, str]) -> dict[str, Json]:
+    place = _location(location)
+    text = corpus[place.path]
+    return {
+        **place.as_json(),
+        "text": "".join(
+            text.splitlines(keepends=True)[place.line_start - 1 : place.line_end]
+        ),
+    }
+
+
+def plan_resolution(
+    config: ProjectConfig,
+    document: Document,
+    question: Question,
+    facts: dict[str, Json],
+) -> Plan:
+    """Type/placement choices see the opening and outline, without an invented role."""
+    states = _section_states(
+        document, validate_document(config, document.path, document.text).body_start
+    )
+    first = next(iter(states))
+    state: dict[str, Json] = {
+        "path": document.path,
+        "context": document.context,
+        "diff": document.diff,
+        "outline": [
+            {key: value for key, value in section.items() if key != "text"}
+            for section in states.values()
+        ],
+        "opening": first,
+        "sections": {first: states[first]},
+        "index_entries": facts.get("index_entries", []),
+    }
+    payload = request_payload(config.model, state, (question,))
+    if (
+        len(question.options) > 255
+        or len(encoded_request(payload)) > config.limits.request_bytes
+    ):
+        return Plan(
+            (),
+            (
+                Gap(
+                    question.location, "resolution input cannot fit the provider limits"
+                ),
+            ),
+        )
+    return Plan((Request(payload, (question,), "classification"),))

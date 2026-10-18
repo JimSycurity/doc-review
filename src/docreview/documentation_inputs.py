@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import difflib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from pathlib import Path
 
+from docreview.configuration import relative_path
 from docreview.documentation_decisions import Json, as_object, nonempty_text
 from docreview.documentation_rubrics import TYPES
 
@@ -63,6 +64,7 @@ class Case:
     document: Document
     repair_round: int = 0
     expected_route: str | None = None
+    expected_criteria: dict[str, str] = field(default_factory=dict)
 
 
 def from_snapshots(
@@ -114,12 +116,13 @@ def _boolean(row: dict[str, Json], key: str, default: bool) -> bool:
     return value
 
 
-def parse_document(value: Json) -> Document:
+def parse_document(value: Json, allowed_types: set[str] | None = None) -> Document:
     """Validate the explicit input, leaving all supplied text intact."""
     row = as_object(value, "document")
     document_type = row.get("document_type")
     if document_type is not None and (
-        not isinstance(document_type, str) or document_type not in TYPES
+        not isinstance(document_type, str)
+        or document_type not in (set(TYPES) | (allowed_types or set()))
     ):
         raise ValueError("unknown document_type")
     raw_references = row.get("references", [])
@@ -130,12 +133,14 @@ def parse_document(value: Json) -> Document:
         item = as_object(raw, "reference")
         references.append(
             Reference(
-                nonempty_text(item.get("path"), "reference path"),
+                relative_path(nonempty_text(item.get("path"), "reference path")),
                 nonempty_text(item.get("text"), "reference text"),
             )
         )
+    if len({reference.path for reference in references}) != len(references):
+        raise ValueError("reference paths must be unique")
     return Document(
-        nonempty_text(row.get("path"), "path"),
+        relative_path(nonempty_text(row.get("path"), "path")),
         nonempty_text(row.get("text"), "text"),
         _text(row, "purpose"),
         _text(row, "audience"),
@@ -148,7 +153,7 @@ def parse_document(value: Json) -> Document:
     )
 
 
-def parse_case(value: Json) -> Case:
+def parse_case(value: Json, allowed_types: set[str] | None = None) -> Case:
     """Require valid routing/evaluation metadata without putting it in model state."""
     row = as_object(value, "case")
     split = nonempty_text(row.get("split"), "split")
@@ -169,23 +174,38 @@ def parse_case(value: Json) -> Case:
     return Case(
         nonempty_text(row.get("id"), "id"),
         split,
-        parse_document(row.get("document")),
+        parse_document(row.get("document"), allowed_types),
         repair_round,
         expected,
+        _expected_criteria(row.get("expected_criteria", {})),
     )
 
 
-def load_cases(path: Path, split: str) -> list[Case]:
+def load_cases(
+    path: Path, split: str, allowed_types: set[str] | None = None
+) -> list[Case]:
     """Read only the selected bundle; never discover documents or credentials."""
     from docreview.documentation_decisions import read_json
 
     raw = read_json(path.read_text(encoding="utf-8"))
     if not isinstance(raw, list) or not raw:
         raise ValueError("cases must be a nonempty list")
-    cases = [parse_case(value) for value in raw]
+    cases = [parse_case(value, allowed_types) for value in raw]
     if len({case.name for case in cases}) != len(cases):
         raise ValueError("case IDs must be unique")
     selected = [case for case in cases if split == "all" or case.split == split]
     if not selected:
         raise ValueError("no cases match the split")
     return selected
+
+
+def _expected_criteria(value: Json) -> dict[str, str]:
+    row = as_object(value, "expected_criteria")
+    result = {}
+    for key, status in row.items():
+        if not isinstance(status, str) or status not in {"pass", "fail", "uncertain"}:
+            raise ValueError(
+                "expected criterion status must be pass, fail or uncertain"
+            )
+        result[key] = status
+    return result

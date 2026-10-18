@@ -295,6 +295,11 @@ def load_config(root: Path) -> ProjectConfig:
     return _with_warnings(_build_config(root, payload, raw))
 
 
+def default_config(root: Path) -> ProjectConfig:
+    """Use read-only defaults for explicit bundles without discovering project files."""
+    return _build_config(root.resolve(), b"", {})
+
+
 def _build_config(root: Path, payload: bytes, raw: dict[str, Json]) -> ProjectConfig:
     review = table(
         raw.get("review", {}),

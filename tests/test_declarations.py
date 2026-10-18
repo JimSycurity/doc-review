@@ -180,3 +180,13 @@ def test_invalid_term_pattern_is_a_declaration_error(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="pattern"):
         load_config(tmp_path)
+
+
+def test_optional_unresolved_type_remains_unknown_for_model_classification(
+    tmp_path: Path,
+) -> None:
+    result = validate_document(
+        load_config(tmp_path), "notes/idea.md", "# Idea\n\nAn undeclared note.\n"
+    )
+    assert result.document_type is None
+    assert not result.failures

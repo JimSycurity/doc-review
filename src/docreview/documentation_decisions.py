@@ -33,19 +33,22 @@ def nonempty_text(value: Json, name: str) -> str:
     return value
 
 
+def encoded_request(request: Mapping[str, Json]) -> bytes:
+    """Use the exact UTF-8 representation for budgeting, hashing and transport."""
+    return json.dumps(
+        request, ensure_ascii=False, separators=(",", ":"), allow_nan=False
+    ).encode("utf-8")
+
+
 def decide(request: Mapping[str, Json], api_key: str) -> dict[str, Json]:
     """Call only OpenRouter Decisions; withhold raw provider errors and secrets."""
-    if not api_key or any(character.isspace() for character in api_key):
-        raise ValueError("credential must be a single nonempty token")
-    payload = json.dumps(request)
-    if api_key in payload:
-        raise ValueError("authentication material must not appear in document state")
+    payload = _validated_payload(request, api_key)
     connection = http.client.HTTPSConnection("openrouter.ai", timeout=30)
     try:
         connection.request(
             "POST",
             "/api/alpha/decisions",
-            payload.encode(),
+            payload,
             {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         )
         response = connection.getresponse()
@@ -56,6 +59,8 @@ def decide(request: Mapping[str, Json], api_key: str) -> dict[str, Json]:
         content = response.read(1_000_001)
         if len(content) > 1_000_000:
             raise ValueError("Decision response exceeds response size limit")
+        if api_key.encode() in content:
+            raise ValueError("authentication material appeared in the response")
         return as_object(read_json(content.decode("utf-8")), "response")
     except (OSError, http.client.HTTPException, UnicodeError) as exc:
         raise ValueError(
@@ -63,6 +68,17 @@ def decide(request: Mapping[str, Json], api_key: str) -> dict[str, Json]:
         ) from None
     finally:
         connection.close()
+
+
+def _validated_payload(request: Mapping[str, Json], api_key: str) -> bytes:
+    if not api_key or any(character.isspace() for character in api_key):
+        raise ValueError("credential must be a single nonempty token")
+    payload = encoded_request(request)
+    if len(payload) > 32_000:
+        raise ValueError("Decision request exceeds the 32000-byte limit")
+    if api_key.encode() in payload:
+        raise ValueError("authentication material must not appear in document state")
+    return payload
 
 
 def probability(value: Json) -> float:

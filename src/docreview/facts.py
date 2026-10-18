@@ -188,10 +188,12 @@ def _document_report(
         "sections": len(outline),
         "heading_tree": [section.as_json() for section in outline],
         "links_total": graph.totals[path],
-        "links_resolve": not graph.failures[path],
+        "links_resolve": None if graph.unassessed[path] else not graph.failures[path],
         "inbound_links": len(graph.incoming[path]),
         "inbound_sources": incoming_sources,
-        "placement_ok": not any(
+        "placement_ok": None
+        if declaration.document_type is None
+        else not any(
             item.rule == "placement.type_path"
             for item in (*failures, *declaration.review_items)
         ),
@@ -231,6 +233,10 @@ def _document_report(
             else f"duplication: no candidate pairs at overlap >= {config.limits.duplicate_overlap}; ownership and content not assessed",
             "duplication: lexical retrieval cannot establish absence of paraphrased duplication",
             "docstrings: Markdown-only input",
+            *[
+                f"links: {finding.message} at line {finding.line_start}"
+                for finding in graph.unassessed[path]
+            ],
         ],
     }
 
@@ -243,16 +249,34 @@ def inspect_repository(
     moved_paths: set[str] | None = None,
 ) -> dict[str, Json]:
     """Inspect selected maintained pages against the whole maintained link corpus."""
-    maintained = maintained_paths(config)
-    selected = maintained if paths is None else sorted(set(paths))
-    if set(selected) - set(maintained):
-        raise ValueError("selected paths must be existing maintained Markdown")
+    return inspect_corpus(
+        config, read_corpus(config), paths, new_paths=new_paths, moved_paths=moved_paths
+    )
+
+
+def read_corpus(config: ProjectConfig) -> dict[str, str]:
+    """Capture source text once so facts and questions use the same snapshot."""
+    return {
+        path: repository_path(config.root, path).read_text(encoding="utf-8")
+        for path in maintained_paths(config)
+    }
+
+
+def inspect_corpus(
+    config: ProjectConfig,
+    corpus: dict[str, str],
+    paths: list[str] | None = None,
+    *,
+    new_paths: set[str] | None = None,
+    moved_paths: set[str] | None = None,
+    allow_filesystem: bool = True,
+) -> dict[str, Json]:
+    """Use an explicit corpus for repository or before/after snapshot review."""
+    selected = sorted(corpus) if paths is None else sorted(set(paths))
+    if set(selected) - corpus.keys():
+        raise ValueError("selected paths must belong to the supplied corpus")
     if (set(new_paths or ()) | set(moved_paths or ())) - set(selected):
         raise ValueError("new/moved paths must be included in the selected files")
-    corpus = {
-        path: repository_path(config.root, path).read_text(encoding="utf-8")
-        for path in maintained
-    }
     declarations = {
         path: validate_document(config, path, text, is_move=path in (moved_paths or ()))
         for path, text in corpus.items()
@@ -261,6 +285,7 @@ def inspect_repository(
         config.root,
         corpus,
         {path: declaration.body_start for path, declaration in declarations.items()},
+        allow_filesystem=allow_filesystem,
     )
     index = load_index(
         config,
@@ -284,6 +309,13 @@ def inspect_repository(
         )
         for path in selected
     ]
+    for value in documents:
+        if isinstance(value, dict):
+            facts = value["facts"]
+            if isinstance(facts, dict):
+                facts["index_entries"] = _routing_entries(
+                    str(value["path"]), graph, corpus
+                )
     # Summary uses the final findings, including terms and navigation, not only declarations.
     hard_failures = sum(
         len(row["hard_failures"])
@@ -335,3 +367,26 @@ def report_exit_code(config: ProjectConfig, report: dict[str, Json]) -> int:
     ):
         return 1
     return 0
+
+
+def _routing_entries(path: str, graph: LinkGraph, corpus: dict[str, str]) -> list[Json]:
+    from docreview.link_graph import local_target
+    from docreview.markdown import links
+
+    entries: list[Json] = []
+    for source in sorted(graph.incoming[path]):
+        lines = corpus[source].splitlines()
+        for link in links(corpus[source]):
+            try:
+                target = local_target(source, link.target)
+            except ValueError:
+                continue
+            if target is not None and target[0] == path:
+                entries.append(
+                    {
+                        "path": source,
+                        "line_start": link.line,
+                        "text": lines[link.line - 1],
+                    }
+                )
+    return entries
