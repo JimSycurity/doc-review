@@ -1,0 +1,15 @@
+repos:
+  - repo: local
+    hooks:
+      - id: docreview-ruff-check
+        name: docreview Ruff check
+        entry: uv run --project packages/docreview ruff check --fix
+        language: system
+        files: ^packages/docreview/.*\.py$
+        types_or: [python, pyi]
+      - id: docreview-ruff-format
+        name: docreview Ruff format
+        entry: uv run --project packages/docreview ruff format
+        language: system
+        files: ^packages/docreview/.*\.py$
+        types_or: [python, pyi]
