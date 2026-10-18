@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from docreview import __version__
+from docreview.duplication import load_index
 from docreview.frontmatter import Declaration, Finding, validate_document
 from docreview.link_graph import LinkGraph, build_graph, redirect_failures
 from docreview.markdown import Section, prose_lines, sections
@@ -16,6 +17,7 @@ from docreview.paths import maintained_paths, matches, repository_path
 if TYPE_CHECKING:
     from docreview.configuration import ProjectConfig
     from docreview.documentation_decisions import Json
+    from docreview.duplication import DuplicationIndex
 
 EXECUTION_PATTERNS = (
     r"\b\d{4}-\d{2}-\d{2}[T ][0-2]\d:[0-5]\d",
@@ -160,6 +162,7 @@ def _document_report(
     graph: LinkGraph,
     terms: list[tuple[str, re.Pattern[str]]],
     is_new: bool,
+    duplicate_candidates: list[Json],
 ) -> dict[str, Json]:
     outline = sections(text, declaration.body_start)
     banned, term_failures = _banned_terms(
@@ -195,7 +198,7 @@ def _document_report(
         "banned_terms": banned,
         "execution_log_signals": signals,
         "readability": readability,
-        "duplicate_candidates": [],
+        "duplicate_candidates": duplicate_candidates,
         "docstring_facts": [],
         "source_sha256": hashlib.sha256(text.encode()).hexdigest(),
     }
@@ -223,7 +226,10 @@ def _document_report(
         },
         "not_assessed": [
             "model criteria: facts-only run",
-            "duplication: retrieval index is not implemented in this slice",
+            "duplication: candidate ownership and content not assessed"
+            if duplicate_candidates
+            else f"duplication: no candidate pairs at overlap >= {config.limits.duplicate_overlap}; ownership and content not assessed",
+            "duplication: lexical retrieval cannot establish absence of paraphrased duplication",
             "docstrings: Markdown-only input",
         ],
     }
@@ -256,6 +262,14 @@ def inspect_repository(
         corpus,
         {path: declaration.body_start for path, declaration in declarations.items()},
     )
+    index = load_index(
+        config,
+        corpus,
+        {path: declaration.body_start for path, declaration in declarations.items()},
+    )
+    duplicate_candidates = _duplicate_candidates(
+        index, set(selected), config.limits.duplicate_overlap
+    )
     terms = _term_patterns(config)
     documents: list[Json] = [
         _document_report(
@@ -266,6 +280,7 @@ def inspect_repository(
             graph,
             terms,
             path in (new_paths or ()),
+            duplicate_candidates[path],
         )
         for path in selected
     ]
@@ -283,6 +298,7 @@ def inspect_repository(
         "model": {"requested": config.model, "answered": None},
         "thresholds": dict(config.thresholds),
         "documents": documents,
+        "duplication_index": index.metadata(),
         "summary": {
             "documents": len(documents),
             "pass": 0,
@@ -297,6 +313,16 @@ def inspect_repository(
         },
         "warnings": list(config.warnings),
     }
+
+
+def _duplicate_candidates(
+    index: DuplicationIndex, selected: set[str], threshold: float
+) -> dict[str, list[Json]]:
+    result: dict[str, list[Json]] = {path: [] for path in selected}
+    for pair in index.candidates(selected, threshold):
+        for path in {pair.left.path, pair.right.path} & selected:
+            result[path].append(pair.as_json())
+    return result
 
 
 def report_exit_code(config: ProjectConfig, report: dict[str, Json]) -> int:

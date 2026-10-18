@@ -7,6 +7,7 @@ import json
 import sys
 from pathlib import Path
 
+from docreview.catalog import apply_catalogs, plan_catalogs
 from docreview.configuration import load_config
 from docreview.documentation_trial import main as trial_main
 from docreview.facts import inspect_repository, report_exit_code
@@ -57,8 +58,17 @@ def _parser() -> argparse.ArgumentParser:
         metavar="PATH",
         help="Write JSON inside an owned repository; otherwise print to stdout",
     )
-    commands.add_parser(
-        "catalog", help="Reserved for the later catalog-generator slice"
+    catalog = commands.add_parser(
+        "catalog", help="Generate or check declared directory catalogs"
+    )
+    catalog.add_argument(
+        "--root",
+        type=Path,
+        default=Path.cwd(),
+        help="Repository containing docs-review.toml",
+    )
+    catalog.add_argument(
+        "--check", action="store_true", help="Report stale catalogs without writing"
     )
     adopt = commands.add_parser(
         "adopt", help="Reserved for the later adoption-report slice"
@@ -83,6 +93,26 @@ def _facts(args: argparse.Namespace) -> int:
     return report_exit_code(config, report)
 
 
+def _catalog(args: argparse.Namespace) -> int:
+    config = load_config(args.root)
+    plan = plan_catalogs(config)
+    mode = (
+        "report-only"
+        if config.authority == "contributed"
+        else "check"
+        if args.check
+        else "generate"
+    )
+    should_apply = mode == "generate" and not plan.failures
+    if should_apply:
+        apply_catalogs(config, plan)
+    print(json.dumps(plan.as_json(mode, applied=should_apply), indent=2))
+    return int(
+        config.authority == "owned"
+        and (bool(plan.failures) or (args.check and plan.has_failures))
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     """Return 1 for owned enforcing failures, 2 for incomplete runs, otherwise 0."""
     parser = _parser()
@@ -94,6 +124,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "facts":
             return _facts(args)
+        if args.command == "catalog":
+            return _catalog(args)
         print(
             f"{args.command} is not implemented in this package slice", file=sys.stderr
         )

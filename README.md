@@ -52,6 +52,36 @@ refuses file writes. In owned mode, `--out report.json` writes the report relati
 to the repository root; stdout is the default. Unknown declaration keys and
 unsafe or unavailable sources prevent completion.
 
+## Directory catalogs
+
+```bash
+uv run docreview catalog --root /path/to/repo          # generate in owned mode
+uv run docreview catalog --root /path/to/repo --check  # check without writing
+```
+
+Catalogs use each page's type, status, first heading and first purpose paragraph.
+They include links to child directories, omit excluded pages and remain stable
+across repeated runs. `--check` returns `1` for stale output in owned mode.
+Configured curated indexes stay hand-written. An existing unmarked README is an
+ownership conflict; generation reports it and writes nothing. Missing curated
+indexes and invalid source declarations also prevent generation. Contributed
+mode always prints a proposed catalog and returns `0` for findings.
+
+## Duplication candidates
+
+`facts` compares groups of five words in heading sections and reports similar
+section pairs with both file locations. Similarity alone never fails a page or
+establishes that either page owns the guidance. Sections shorter than five words
+have no such groups; the index metadata counts them as skipped. The report
+keeps model review and possible paraphrased duplication explicitly unassessed.
+
+Owned mode stores a disposable index under
+`.tmp/docreview/duplicates/<tree-hash>.json`. The key includes the maintained
+Markdown paths, content, section offsets and algorithm version; changed, added
+or removed pages select a new cache. Corrupt or unavailable caches are rebuilt
+in memory and reported. Contributed mode never writes a cache. Keep `.tmp/`
+out of Git; no index or generated test corpus belongs in a commit.
+
 ## Trial and planned commands
 
 The [review trial guide](../../skills/code-review-and-qa/code-review/references/documentation-decision-trial.md)
@@ -60,6 +90,6 @@ questions and report remain unchanged while the new deterministic layer is
 built. It is separate from `facts`; this slice does not yet join them.
 
 The [review boundary design](../../docs/design/documentation-review-boundary.md)
-specifies catalog generation, duplication retrieval and the section-based model
-rewrite. Reports name those unassessed areas. `catalog` and `adopt --report-only`
-reserve later commands and currently return an explicit unavailable error.
+specifies the remaining section-based model rewrite and profile integration.
+`adopt --report-only` reserves the later adoption command and currently returns
+an explicit unavailable error.
