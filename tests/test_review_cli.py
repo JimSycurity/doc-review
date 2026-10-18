@@ -93,3 +93,31 @@ def test_invalid_prepared_function_facts_fail_cleanly(
     )
     assert main(["review", "--docstrings", str(source)]) == 2
     assert "relative" in capsys.readouterr().err
+
+
+def test_snapshot_links_can_stay_unassessed_for_other_revisions(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "docs-review.toml").write_text('[review]\nauthority = "contributed"\n')
+    case = {
+        "id": "old",
+        "split": "development",
+        "document": {
+            "path": "docs/usage/old.md",
+            "text": "# Old\n\nSee [setup](setup.md).\n",
+            "document_type": "runbook",
+            "context_complete": True,
+        },
+    }
+    cases = tmp_path / "cases.json"
+    cases.write_text(json.dumps([case]))
+    base = ["review", "--root", str(tmp_path), "--cases", str(cases)]
+    variants: tuple[tuple[list[str], bool], ...] = (
+        ([], True),
+        (["--snapshot-links", "unassessed"], False),
+    )
+    for flag, failed in variants:
+        assert main([*base, *flag]) == 0
+        row = json.loads(capsys.readouterr().out)["documents"][0]
+        rules = [item["rule"] for item in row["hard_failures"]]
+        assert ("links.unresolved" in rules) is failed

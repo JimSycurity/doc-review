@@ -38,6 +38,13 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
         "--split", choices=["all", "development", "holdout", "real"], default="all"
     )
     parser.add_argument(
+        "--snapshot-links",
+        choices=["filesystem", "unassessed"],
+        default="filesystem",
+        help="With --cases and --root: resolve snapshot links against the root, or "
+        "leave them unassessed when snapshots come from other revisions",
+    )
+    parser.add_argument(
         "--docstrings",
         type=Path,
         help="Prepared changed public-function facts in a JSON array",
@@ -198,7 +205,8 @@ def run_review(args: argparse.Namespace) -> int:
         new_paths=set(args.new),
         moved_paths=set(args.moved),
         function_repair_round=args.repair_round or 0,
-        snapshot_filesystem=args.root is not None,
+        snapshot_filesystem=args.root is not None
+        and args.snapshot_links == "filesystem",
     )
     payload = json.dumps(report, indent=2, allow_nan=False) + "\n"
     if output:
