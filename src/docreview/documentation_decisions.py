@@ -109,13 +109,19 @@ class Answer:
         }
 
 
+ROUNDING_PER_OUTCOME = 0.005
+
+
 def distribution(value: Json, labels: set[str]) -> dict[str, float]:
     """Require exactly the requested outcomes and a valid probability mass."""
     raw = as_object(value, "probabilities")
     if set(raw) != labels:
         raise ValueError("probability labels do not match the question")
     values = {key: probability(item) for key, item in raw.items()}
-    if not math.isclose(sum(values.values()), 1, abs_tol=0.001):
+    # The provider sometimes rounds each outcome to two decimals, observed as a
+    # three-level score summing to 0.99. Allow that rounding bound, no more.
+    tolerance = max(0.001, ROUNDING_PER_OUTCOME * len(values))
+    if not math.isclose(sum(values.values()), 1, abs_tol=tolerance):
         raise ValueError("probabilities do not sum to one")
     return values
 
