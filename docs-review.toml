@@ -1,0 +1,28 @@
+# Documentation declaration for this repository. The engine checks its own docs.
+# Contract: docs/declaration.md
+
+[review]
+standard = "project"
+authority = "owned"
+engine = "docreview==0.1.0"
+
+[scope]
+maintained = ["README.md", "AGENTS.md", "CLAUDE.md", "CONTEXT.md", "CHANGELOG.md",
+              "CONTRIBUTING.md", "SECURITY.md", "docs/**/*.md"]
+excluded = [".tmp/**", "dist/**"]
+generated = ["docs/README.md"]
+fixed_types = { "README.md" = "readme", "AGENTS.md" = "agent_instructions", "CLAUDE.md" = "agent_instructions", "CONTEXT.md" = "context", "CHANGELOG.md" = "reference", "CONTRIBUTING.md" = "runbook", "SECURITY.md" = "policy" }
+
+[types.reference]
+paths = ["docs/*.md"]
+purpose = "Define a public engine contract or rule set exactly enough to adopt and verify it"
+audience = "project owners adopting the engine and agents running it"
+
+[types.runbook]
+paths = ["docs/*.md"]
+purpose = "Tell a project owner or agent how to run the engine and act on its results"
+audience = "project owners adopting the engine and agents running it"
+
+[indexes]
+curated = ["/README.md", "/AGENTS.md"]   # anchored: a bare name matches in any directory
+curated_required_for = ["agent_instructions", "runbook", "context"]

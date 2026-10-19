@@ -1,0 +1,25 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: Ruff check
+        entry: uv run ruff check --fix
+        language: system
+        types_or: [python, pyi]
+      - id: ruff-format
+        name: Ruff format
+        entry: uv run ruff format
+        language: system
+        types_or: [python, pyi]
+      - id: docreview-catalog
+        name: docreview catalog
+        entry: uv run docreview catalog --root .
+        language: system
+        pass_filenames: false
+        files: (\.md|^docs-review\.toml)$
+      - id: docreview-facts
+        name: docreview facts
+        entry: uv run docreview facts --root .
+        language: system
+        pass_filenames: false
+        files: (\.md|^docs-review\.toml)$

@@ -1,0 +1,127 @@
+[
+  {
+    "id": "coherent-readme",
+    "split": "development",
+    "document": {
+      "path": "README.md",
+      "text": "# Snapshot Compare\n\nSnapshot Compare shows what changed between two inventory exports. It runs locally and writes a report; it does not change either inventory source.\n\n## Get started\n\nInstall Python 3.11 or later. Run `python compare.py --help` to see the supported arguments. To compare two exports, run `python compare.py before.json after.json`. Read the resulting report in your terminal. If either file is invalid, the command explains which input needs correction and leaves both files unchanged.\n\n## Find the right guide\n\n- [Setup](setup.md): installation and supported input formats.\n- [Operator guide](operations.md): interpreting differences and handling input errors.\n- [Contributing](CONTRIBUTING.md): tests and contribution requirements.\n\n## Help\n\nOpen a project issue with a description of the problem and sanitized example input. Never attach credentials or private inventory exports.\n",
+      "purpose": "Introduce the project and help new users start.",
+      "audience": "People comparing inventory exports.",
+      "context": "These are the current project documents. Their stated roles are maintained by the repository owner.",
+      "references": [],
+      "document_type": "readme",
+      "context_complete": true
+    },
+    "expected_route": "pass"
+  },
+  {
+    "id": "classified-readme",
+    "split": "development",
+    "document": {
+      "path": "README.md",
+      "text": "# Snapshot Compare\n\nSnapshot Compare shows what changed between two inventory exports. It runs locally and writes a report; it does not change either inventory source.\n\n## Get started\n\nInstall Python 3.11 or later. Run `python compare.py --help` to see the supported arguments. To compare two exports, run `python compare.py before.json after.json`. Read the resulting report in your terminal. If either file is invalid, the command explains which input needs correction and leaves both files unchanged.\n\n## Find the right guide\n\n- [Setup](setup.md): installation and supported input formats.\n- [Operator guide](operations.md): interpreting differences and handling input errors.\n- [Contributing](CONTRIBUTING.md): tests and contribution requirements.\n\n## Help\n\nOpen a project issue with a description of the problem and sanitized example input. Never attach credentials or private inventory exports.\n",
+      "purpose": "Introduce the project and help new users start.",
+      "audience": "People comparing inventory exports.",
+      "context": "These are the current project documents. Their stated roles are maintained by the repository owner.",
+      "references": [],
+      "document_type": null,
+      "context_complete": true
+    },
+    "expected_route": "pass"
+  },
+  {
+    "id": "readme-with-contributor-handbook",
+    "split": "development",
+    "document": {
+      "path": "README.md",
+      "text": "# Snapshot Compare\n\nSnapshot Compare shows what changed between two inventory exports. It runs locally and writes a report; it does not change either inventory source.\n\n## Get started\n\nInstall Python 3.11 or later. Run `python compare.py --help` to see the supported arguments. To compare two exports, run `python compare.py before.json after.json`. Read the resulting report in your terminal. If either file is invalid, the command explains which input needs correction and leaves both files unchanged.\n\n## Find the right guide\n\n- [Setup](setup.md): installation and supported input formats.\n- [Operator guide](operations.md): interpreting differences and handling input errors.\n- [Contributing](CONTRIBUTING.md): tests and contribution requirements.\n\n## Help\n\nOpen a project issue with a description of the problem and sanitized example input. Never attach credentials or private inventory exports.\n\n## Full contributor policy\n\nEvery function needs annotations. Use exactly the configured formatter. Before changing a dependency, complete the exception request and add its approval receipt. Every PR must include a documentation assessment. Run all checks before handoff. Agent sessions must follow the detailed process below.\n\n### Agent review protocol\n\nRead the full session transcript. Copy each decision into the root handbook. List every tool call and exit code. Repeat the test suite after each paragraph edit. Maintain a table of per-PR history entries. Use the shared deployment gate for all edits.\n",
+      "purpose": "Introduce the project and route users to setup. Detailed contributor rules belong in CONTRIBUTING.md.",
+      "audience": "New users.",
+      "context": "These are the current project documents. Their stated roles are maintained by the repository owner.",
+      "references": [
+        {
+          "path": "CONTRIBUTING.md",
+          "text": "# Contributing\n\nThis file owns contribution rules. Annotate functions, use the configured formatter, and run the affected tests. PRs hold implementation evidence. Do not copy these detailed rules into the README."
+        }
+      ],
+      "document_type": "readme",
+      "context_complete": true
+    },
+    "expected_route": "revise"
+  },
+  {
+    "id": "coherent-recovery",
+    "split": "development",
+    "document": {
+      "path": "docs/usage/coherent-recovery.md",
+      "text": "---\ntype: runbook\n---\n# Recover the inventory worker\n\nRead this guide when the worker cannot process inventory jobs. You need host access as the service owner. The commands below are supported by the installed worker package. A recovery restores the prior configuration and does not delete queued jobs.\n\n## Before starting\n\nRun `workerctl status`. Record the current job identifier on the incident issue. Confirm that the previous configuration is available with `workerctl backups`. If no backup exists, stop and ask the service owner for a recovery source.\n\n## Recover\n\n1. Run `workerctl pause` to stop new jobs from starting.\n2. Run `workerctl wait-idle`. If a job remains active, inspect its status before stopping it.\n3. Run `workerctl save-current` to preserve the failed configuration.\n4. Run `workerctl restore previous` to select the last working configuration.\n5. Run `workerctl health`. Continue only when it reports healthy.\n6. Run `workerctl resume` and observe one job through completion.\n\n## If recovery fails\n\nKeep the queue paused. Preserve the failed configuration and the selected backup. Report the command that failed and its sanitized error on the incident issue. Ask the service owner to inspect the retained files before another recovery attempt.\n\n## Recognize success\n\nThe health check reports healthy and one queued job completes. Record the result on the incident issue. The guide remains a reusable procedure; it does not retain individual recovery receipts.\n",
+      "purpose": "Help the service owner recover a failed worker.",
+      "audience": "An operator who can use a shell but does not develop the worker.",
+      "context": "These are the current project documents. Their stated roles are maintained by the repository owner.",
+      "references": [],
+      "document_type": "human_instructions",
+      "context_complete": true
+    },
+    "expected_route": "pass"
+  },
+  {
+    "id": "jargon-heavy-design",
+    "split": "development",
+    "document": {
+      "path": "docs/design/jargon-heavy-design.md",
+      "text": "---\ntype: design\nstatus: draft\n---\n# Epochal state convergence substrate\n\nThe proposal instantiates monotonic authority epochs across proof-bound admission cohorts to amortize semantic reconciliation at the controller nexus. The intended operating model is declarative congruence over context-addressed receipts.\n\n## Problem\n\nAuthority drift emerges when shadow writers violate cohort provenance. Convergence is nontrivial because lease-normalized state lacks canonical provider referentiality.\n\n## Proposed behavior\n\nA multiplexed admission substrate synthesizes cohort-consistent predicates from authority manifests. Operators furnish pin-consistent semantic closure, then adjudicate CAS successor ambiguity. The substrate projects attested continuations into the receipt normal form.\n\n## Interfaces\n\nThe controller accepts cohort claims and emits immutable continuation envelopes. Workers consume envelopes and publish provenance-normalized effects. The state index stores the provider congruence relation.\n\n## Tradeoffs\n\nThe synchronous proof plane trades availability for epochal coherence. An asynchronous evidence lattice avoids admission coupling but increases ambiguity windows. The synchronous plane is proposed; no runtime change is installed.\n\n## Open decision\n\nThe design has not selected whether epoch advancement follows each receipt or an operator-defined cohort boundary.\n",
+      "purpose": "Explain how shared state coordination will work and why it is needed.",
+      "audience": "Range owners and operators who are not software engineers.",
+      "context": "These are the current project documents. Their stated roles are maintained by the repository owner.",
+      "references": [],
+      "document_type": "design",
+      "context_complete": true
+    },
+    "expected_route": "revise"
+  },
+  {
+    "id": "context-with-unrelated-handbooks",
+    "split": "development",
+    "document": {
+      "path": "docs/context/handbooks.md",
+      "text": "---\ntype: context\n---\n# Range context\n\nThis page defines stable range vocabulary. It is the entry point for understanding actors and model boundaries.\n\n## Actors\n\nAn owner sets the range narrative. An operator performs range work. A viewer observes the range.\n\n## Narrative\n\nThe narrative explains the company, people and intended relationships.\n\n## Git conflict repair\n\nRun git status, inspect every conflict marker, select each desired side, stage files, rerun validation, then continue the rebase.\n\n## Database tuning\n\nAdjust worker memory, inspect query plans, choose indexes for each workload, and monitor checkpoint timing.\n\n## Cloud billing\n\nChoose spending alerts for every subscription and reconcile invoices each month.\n\n## Certificate recovery\n\nPause the daily schedule, inspect the pending order, restore the prior certificate, and check the public endpoint.\n\n## Brand guidelines\n\nUse the company color palette in slides, reserve title space, and export graphics at the specified sizes.\n\n## Collector packaging\n\nResolve dependencies, build a wheel, prepare the container, record its digest, and test a tenant rollout.\n\n## Agent authoring rules\n\nUse annotations, run strict typing, prefer small functions, and route instructions to the correct scope.\n\n## SQL identifier allocation\n\nReserve blocks, inspect all active branches, select the next available range and reconcile feature merges.\n\n## Support requests\n\nProvide the host, tenant, task, observed error and expected behavior when asking for help.\n\n## Deployment checks\n\nRead the installed controller version, compare migrations, prepare runtime inputs and review pending work before service restart.\n",
+      "purpose": "Define stable vocabulary, actors and relationships. Procedures belong in their focused guides.",
+      "audience": "Humans and agents learning the range.",
+      "context": "These are the current project documents. Their stated roles are maintained by the repository owner.",
+      "references": [],
+      "document_type": "context",
+      "context_complete": true
+    },
+    "expected_route": "revise"
+  },
+  {
+    "id": "incident-report",
+    "split": "development",
+    "document": {
+      "path": "docs/reports/incident.md",
+      "text": "---\ntype: report\n---\n# Inventory outage report\n\nA missing worker configuration stopped inventory jobs on Tuesday. Restoring the previous configuration returned the queue to service. This report records the incident; use the recovery guide for current operating steps.\n\n## Evidence and timeline\n\nAt 09:12 the health probe failed. At 09:15 the operator paused the queue. At 09:26 the operator restored the retained configuration. At 09:31 the health probe passed and a queued job completed. The attached incident artifacts contain the sanitized service log and configuration comparison.\n\n## Finding\n\nThe new configuration omitted the inventory input path. The worker log identified that missing setting; the restored configuration contained it. The successful job after restoration supports the diagnosis.\n\n## Limits\n\nThe investigation inspected one failed host and one completed recovery job. It does not establish the behavior of other workers or a general reliability rate. The configuration review should add a check for the required path; that follow-up is tracked in the incident issue.\n",
+      "purpose": "Record the incident results and evidence for later investigation.",
+      "audience": "Operators and engineering leads.",
+      "context": "These are the current project documents. Their stated roles are maintained by the repository owner.",
+      "references": [],
+      "document_type": "report",
+      "context_complete": true
+    },
+    "expected_route": "pass"
+  },
+  {
+    "id": "ambiguous-document",
+    "split": "development",
+    "document": {
+      "path": "notes/ambiguous.md",
+      "text": "# Notes\n\nUse the old thing unless the other one is ready. It is probably handled elsewhere.\n",
+      "purpose": "",
+      "audience": "Unknown",
+      "context": "",
+      "references": [],
+      "document_type": null,
+      "context_complete": false
+    },
+    "expected_route": "review"
+  }
+]
