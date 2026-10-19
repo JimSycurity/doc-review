@@ -18,8 +18,7 @@ uv tool install git+https://github.com/JimSycurity/doc-review@v0.1.0
 uv add "docreview @ git+https://github.com/JimSycurity/doc-review@v0.1.0"
 ```
 
-The `v0.1.0` tag does not exist yet in this repository. Until it does, pin a
-commit instead.
+For development builds, pin a full commit hash instead of a branch name.
 
 ## Quick start
 
